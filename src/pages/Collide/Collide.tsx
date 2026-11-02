@@ -10,6 +10,7 @@ export default () => {
 	useEffect(() => {
 		if (!containerRef.current || !canvasRef.current) return;
 
+		const container = containerRef.current;
 		const canvas = canvasRef.current;
 		const context = canvas.getContext("2d");
 		if (!context) return;
@@ -18,13 +19,28 @@ export default () => {
 		const color = d3.scaleOrdinal(d3.schemeTableau10);
 		const nodes = data.map((d: any) => Object.create(d));
 
+		// 设备像素 / 逻辑坐标的缩放比，随容器尺寸与 dpr 变化
+		let scale = 1;
+
+		function resize() {
+			const rect = container.getBoundingClientRect();
+			if (!rect.width || !rect.height) return;
+
+			const dpr = window.devicePixelRatio || 1;
+			canvas.width = Math.round(rect.width * dpr);
+			canvas.height = Math.round(rect.height * dpr);
+			// 后备缓冲区铺满 CSS 尺寸，绘制时再把 400×400 逻辑空间映射上去
+			scale = Math.min(canvas.width / width, canvas.height / height);
+			ticked();
+		}
+
 		const simulation = d3.forceSimulation(nodes)
 			.alphaTarget(0.3) // stay hot
 			.velocityDecay(0.1) // low friction
 			.force("x", d3.forceX().strength(0.01))
 			.force("y", d3.forceY().strength(0.01))
 			.force("collide", d3.forceCollide().radius((d: any) => d.r + 1).iterations(3))
-			.force("charge", d3.forceManyBody().strength((d: any, i: number) => i ? 0 : -width * 2 / 3))
+			.force("charge", d3.forceManyBody().strength((_, i: number) => i ? 0 : -width * 2 / 3))
 			.on("tick", ticked);
 
 		d3.select(canvas)
@@ -32,16 +48,17 @@ export default () => {
 			.on("pointermove", pointermoved);
 
 		function pointermoved(event: PointerEvent) {
-			const [x, y] = d3.pointer(event);
-			nodes[0].fx = x - width / 2;
-			nodes[0].fy = y - height / 2;
+			const [x, y] = d3.pointer(event); // CSS px
+			// CSS px → 400×400 逻辑坐标
+			nodes[0].fx = (x - canvas.clientWidth / 2) / scale;
+			nodes[0].fy = (y - canvas.clientHeight / 2) / scale;
 		}
 
 		function ticked() {
 			if (!context) return;
-			context.clearRect(0, 0, width, height);
-			context.save();
-			context.translate(width / 2, height / 2);
+			context.setTransform(1, 0, 0, 1, 0, 0);
+			context.clearRect(0, 0, canvas.width, canvas.height);
+			context.setTransform(scale, 0, 0, scale, canvas.width / 2, canvas.height / 2);
 			for (let i = 1; i < nodes.length; ++i) {
 				const d = nodes[i];
 				context.beginPath();
@@ -50,12 +67,16 @@ export default () => {
 				context.fillStyle = color(d.group);
 				context.fill();
 			}
-			context.restore();
 		}
 
-		// 清理函数替代原来的 invalidation
+		resize();
+		const observer = new ResizeObserver(resize);
+		observer.observe(container);
+
 		return () => {
+			observer.disconnect();
 			simulation.stop();
+			d3.select(canvas).on("touchmove", null).on("pointermove", null);
 		};
 
 	}, []);
@@ -65,9 +86,7 @@ export default () => {
 			<div className="h-full w-full relative" ref={containerRef}>
 				<canvas
 					ref={canvasRef}
-					width={width}
-					height={width}
-					style={{ width: '100%', height: '100%' }}
+					className="block h-full w-full"
 				/>
 			</div>
 		</BaseWrapper>

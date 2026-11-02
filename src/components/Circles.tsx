@@ -6,7 +6,7 @@ type CirclesProps = {
 }
 export const Circles: FC<CirclesProps> = ({ size = 400 }) => {
 	const data = createData().slice(1);
-	const className = "pos-absolute  border rounded-full clear-both";
+	const className = "pos-absolute  rounded-full clear-both";
 
 	function createData() {
 		const randomFunc = randomLogNormal(0, 1);
